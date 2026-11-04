@@ -1,0 +1,16 @@
+# 依赖
+node_modules/
+
+# 账号与登录态（含敏感信息，绝不提交）
+accounts.json
+user_data_*/
+*.sqlite
+
+# 运行时产物
+debug/
+tmp_images/
+*.log
+
+# 系统文件
+.DS_Store
+Thumbs.db
