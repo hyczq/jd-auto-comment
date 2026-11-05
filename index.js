@@ -34,6 +34,7 @@ async function processAccount(account) {
         name: account.name,
         pending: 0,
         commented: 0,
+        skipped: 0,
         failed: 0,
         images: 0,
         errors: [],
@@ -83,6 +84,9 @@ async function processAccount(account) {
                     console.log(res.dryRun
                         ? `${LogTag.REVIEW} 🔍 预检通过（已填表+配图 ${res.images || 0} 张，未发布）`
                         : `${LogTag.REVIEW} ✅ 评价成功（配图 ${res.images || 0} 张）`)
+                } else if (res.skipped) {
+                    stat.skipped++
+                    console.log(`${LogTag.REVIEW} ⏭ 已跳过: ${res.reason}`)
                 } else {
                     stat.failed++
                     stat.errors.push(res.reason || '未知失败')
@@ -153,7 +157,7 @@ async function main() {
             console.log(`${LogTag.SYSTEM} 账号${account.index} 未捕获异常: ${e.message}`)
             stats.push({
                 index: account.index, name: account.name,
-                pending: 0, commented: 0, failed: 0, images: 0,
+                pending: 0, commented: 0, skipped: 0, failed: 0, images: 0,
                 errors: [e.message],
             })
         }
@@ -163,13 +167,13 @@ async function main() {
     console.log('\n==================================================')
     console.log(`${LogTag.SUMMARY} 任务总结`)
     console.log('==================================================')
-    let tP = 0, tC = 0, tF = 0, tI = 0
+    let tP = 0, tC = 0, tS = 0, tF = 0, tI = 0
     for (const s of stats) {
-        console.log(`账号${s.index} ${s.name}: 待评价${s.pending} 成功${s.commented} 失败${s.failed} 配图${s.images}`)
+        console.log(`账号${s.index} ${s.name}: 待评价${s.pending} 成功${s.commented} 跳过${s.skipped || 0} 失败${s.failed} 配图${s.images}`)
         if (s.errors.length) console.log(`  错误: ${s.errors.slice(0, 3).join(' | ')}`)
-        tP += s.pending; tC += s.commented; tF += s.failed; tI += s.images
+        tP += s.pending; tC += s.commented; tS += s.skipped || 0; tF += s.failed; tI += s.images
     }
-    console.log(`\n合计: 待评价${tP} 成功${tC} 失败${tF} 配图${tI}`)
+    console.log(`\n合计: 待评价${tP} 成功${tC} 跳过${tS} 失败${tF} 配图${tI}`)
 
     if (process.env.AUTOCOMMENT_NOTIFY !== 'false') {
         await notify(`合计成功 ${tC}，失败 ${tF}，配图 ${tI}`)

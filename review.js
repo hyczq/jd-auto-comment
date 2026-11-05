@@ -191,6 +191,12 @@ class ReviewManager {
 
             console.log(`${LogTag.REVIEW} 评价页: ${page.url().split('?')[0]}...`)
 
+            // 外卖订单走 deliveryrate 纯评分表单，没有文字框和图片上传，直接跳过
+            if (/pc-static\/deliveryrate/.test(page.url())) {
+                await this.closeExtra(page)
+                return { ok: false, skipped: true, reason: '外卖订单，仅支持商品评价' }
+            }
+
             // 等表单就绪
             const ready = await page.waitForSelector(SEL.TEXTAREA, { timeout: 30000 })
                 .then(() => true).catch(() => false)
