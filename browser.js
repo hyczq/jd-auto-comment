@@ -62,7 +62,21 @@ function ensureDisplay() {
     // 通过 X11 socket 判断显示器是否已就绪，避免 pgrep 自匹配问题
     const num = disp.replace(/^:/, '').split('.')[0]
     const sock = `/tmp/.X11-unix/X${num}`
-    if (fs.existsSync(sock)) return disp
+    const lock = `/tmp/.X${num}-lock`
+
+    // socket 文件可能残留（容器重启后 Xvfb 已退出但文件还在），
+    // 必须用锁文件里的 pid 确认进程仍存活，否则会误判显示器可用
+    if (fs.existsSync(sock)) {
+        let alive = false
+        try {
+            const pid = Number(String(fs.readFileSync(lock, 'utf8')).trim())
+            alive = !!pid && fs.existsSync(`/proc/${pid}`)
+        } catch (_) { }
+        if (alive) return disp
+        try { fs.unlinkSync(sock) } catch (_) { }
+        try { fs.unlinkSync(lock) } catch (_) { }
+        console.log(`${LogTag.SYSTEM} 清理残留的 ${disp} socket 与锁`)
+    }
 
     // 尝试自动启动 Xvfb
     try {
