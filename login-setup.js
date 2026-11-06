@@ -18,6 +18,9 @@ const { chromium } = require('playwright')
 const { LogTag, sleep } = require('./utils')
 const { ensureDisplay } = require('./browser')
 
+// 等待人工登录的时长（分钟），可用 EVAL_LOGIN_WAIT_MIN 调整
+const WAIT_MIN = Number(process.env.EVAL_LOGIN_WAIT_MIN || 120)
+
 const TARGET = process.env.EVAL_LOGIN_PROFILE || process.argv[2] || 'user_data_main'
 const PROFILE = path.isAbsolute(TARGET) ? TARGET : path.join(__dirname, TARGET)
 
@@ -117,51 +120,60 @@ function findBrowser() {
         }).catch(() => { })
 
         console.log(`${LogTag.LOGIN} 页面已打开，等待人工登录完成...`)
-        console.log(`${LogTag.LOGIN} （最长等待 30 分钟，登录成功后自动退出）`)
+        console.log(`${LogTag.LOGIN} （最长等待 ${WAIT_MIN} 分钟，登录成功后自动退出）`)
 
         // 轮询检测登录成功
-        const deadline = Date.now() + 30 * 60 * 1000
+        const deadline = Date.now() + WAIT_MIN * 60 * 1000
         let ok = false
         while (Date.now() < deadline) {
             await sleep(4000)
+
             const cookies = await ctx.cookies()
             const m = {}
             for (const c of cookies) {
                 if (/jd\.com$/i.test(c.domain.replace(/^\./, ''))) m[c.name] = c.value
             }
+            // thor 是京东的会话票据，长度足够长才说明真正登录成功
             const hasThor = (m.thor || '').length > 100
-            if (hasThor) {
-                // 进一步确认能进评价中心
-                const url = page.url()
-                if (/passport\.jd\.com/.test(url)) {
-                    // 登录态有了但页面还在登录页，等待跳转
-                    continue
-                }
-                const state = await page.evaluate(() => ({
-                    rateBtns: document.querySelectorAll('.rate-btn').length,
-                    nick: (document.querySelector('[class*="shortcut_user"]') || {}).innerText || '',
-                    needLogin: /请登录|免费注册/.test(document.body.innerText || ''),
-                })).catch(() => null)
+            if (!hasThor) continue
 
-                if (state && !state.needLogin) {
-                    console.log('')
-                    console.log('──────────────────────────────────────────────')
-                    console.log(`${LogTag.LOGIN} ✅ 登录成功！`)
-                    if (state.nick) console.log(`${LogTag.LOGIN}    账号: ${state.nick.trim().split('\n')[0]}`)
-                    console.log(`${LogTag.LOGIN}    待评价商品: ${state.rateBtns} 个`)
-                    console.log(`${LogTag.LOGIN}    profile 已保存: ${PROFILE}`)
-                    console.log('──────────────────────────────────────────────')
-                    console.log('')
-                    console.log(`${LogTag.SYSTEM} 现在可以运行主脚本了：`)
-                    console.log(`${LogTag.SYSTEM}   EVAL_DRY_RUN=true node index.js`)
-                    ok = true
-                    break
-                }
-            }
+            // 已登录但页面可能还停在登录页，等它跳走
+            if (/passport\.jd\.com/.test(page.url())) continue
+
+            // 主动导航到评价中心确认会话可用：
+            // 只依赖页面文案判断并不可靠——京东首页可能保留缓存渲染，
+            // 仍显示「请登录」而实际已经是登录态
+            const centerOk = await page
+                .goto('https://comment.m.jd.com/pc-static/center', {
+                    waitUntil: 'domcontentloaded',
+                    timeout: 60000,
+                })
+                .then(() => !/passport\.jd\.com/.test(page.url()))
+                .catch(() => false)
+
+            if (!centerOk) continue
+
+            const state = await page.evaluate(() => ({
+                rateBtns: document.querySelectorAll('.rate-btn').length,
+                nick: (document.querySelector('[class*="shortcut_user"], [class*="user-info"]') || {}).innerText || '',
+            })).catch(() => ({ rateBtns: 0, nick: '' }))
+
+            console.log('')
+            console.log('──────────────────────────────────────────────')
+            console.log(`${LogTag.LOGIN} ✅ 登录成功！`)
+            if (state.nick) console.log(`${LogTag.LOGIN}    账号: ${state.nick.trim().split('\n')[0]}`)
+            console.log(`${LogTag.LOGIN}    待评价商品: ${state.rateBtns} 个`)
+            console.log(`${LogTag.LOGIN}    profile 已保存: ${PROFILE}`)
+            console.log('──────────────────────────────────────────────')
+            console.log('')
+            console.log(`${LogTag.SYSTEM} 现在可以运行主脚本了：`)
+            console.log(`${LogTag.SYSTEM}   EVAL_DRY_RUN=true node index.js`)
+            ok = true
+            break
         }
 
         if (!ok) {
-            console.log(`${LogTag.LOGIN} ❌ 等待超时（30 分钟），未检测到登录成功`)
+            console.log(`${LogTag.LOGIN} ❌ 等待超时（${WAIT_MIN} 分钟），未检测到登录成功`)
             process.exitCode = 1
         }
     } catch (e) {
