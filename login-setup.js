@@ -21,12 +21,15 @@ const { ensureDisplay } = require('./browser')
 const TARGET = process.env.EVAL_LOGIN_PROFILE || process.argv[2] || 'user_data_main'
 const PROFILE = path.isAbsolute(TARGET) ? TARGET : path.join(__dirname, TARGET)
 
+// 登录必须在**可见窗口**中人工操作，因此优先使用完整 chromium。
+// chrome-headless-shell 是纯无头构建，即使 headless:false 也不会渲染窗口。
 const BROWSER_PATHS = [
-    process.env.EVAL_BROWSER_PATH,
-    '/ql/data/dep_cache/node/headless-shell/bin/chrome-headless-shell',
+    process.env.EVAL_LOGIN_BROWSER,
     '/usr/bin/chromium',
     '/usr/bin/chromium-browser',
     '/usr/bin/google-chrome',
+    '/usr/lib/chromium/chromium',
+    '/ql/data/dep_cache/node/headless-shell/bin/chrome-headless-shell',
 ].filter(Boolean)
 
 function findBrowser() {
@@ -48,7 +51,14 @@ function findBrowser() {
 
     const exe = findBrowser()
     if (!exe) {
-        console.log(`${LogTag.SYSTEM} ❌ 未找到浏览器，请检查 chrome-headless-shell 是否存在`)
+        console.log(`${LogTag.SYSTEM} ❌ 未找到可用浏览器`)
+        console.log(`${LogTag.SYSTEM} 登录需要完整版 chromium（不是 chrome-headless-shell）`)
+        process.exit(1)
+    }
+    if (/headless-shell/.test(exe)) {
+        console.log(`${LogTag.SYSTEM} ⚠ 当前只有 chrome-headless-shell，它是纯无头构建，`)
+        console.log(`${LogTag.SYSTEM}   无法显示窗口，将看不到登录页面。`)
+        console.log(`${LogTag.SYSTEM}   请先安装完整 chromium：apt-get install -y chromium`)
         process.exit(1)
     }
 
